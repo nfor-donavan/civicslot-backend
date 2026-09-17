@@ -26,7 +26,13 @@ router.post("/", protect, async (req, res) => {
     // Re-check capacity at booking time to prevent double-booking / overbooking
     const slots = await getAvailableSlots(service, date);
     const slot = slots.find((s) => s.time === time);
-    if (!slot || slot.full) {
+    if (!slot) {
+      return res.status(400).json({ message: "That time slot does not exist for this service." });
+    }
+    if (slot.past) {
+      return res.status(400).json({ message: "That time has already passed today. Please pick a later time." });
+    }
+    if (slot.full) {
       return res.status(409).json({ message: "This time slot is no longer available. Please pick another." });
     }
 
@@ -84,7 +90,9 @@ router.patch("/:id/cancel", protect, async (req, res) => {
   }
 });
 
-// GET /api/appointments - admin: list all, optional ?status=&date=&serviceId=
+// GET /api/appointments - admin: list appointments.
+// Regional admins ONLY see appointments for services in their own region.
+// Superadmins see everything, optionally narrowed with ?region=
 router.get("/", protect, adminOnly, async (req, res) => {
   try {
     const { status, date, serviceId } = req.query;
@@ -92,6 +100,23 @@ router.get("/", protect, adminOnly, async (req, res) => {
     if (status) filter.status = status;
     if (date) filter.date = date;
     if (serviceId) filter.service = serviceId;
+
+    if (req.user.role === "admin") {
+      // Hard scope: ignore anything the client sends and restrict to this
+      // admin's own region, resolved through which services belong to it.
+      const regionalServiceIds = await Service.find({ region: req.user.region }).distinct("_id");
+      filter.service = filter.service
+        ? (regionalServiceIds.some((id) => id.equals(filter.service)) ? filter.service : null)
+        : { $in: regionalServiceIds };
+      if (filter.service === null) {
+        return res.json({ appointments: [] }); // requested a service outside their region
+      }
+    } else if (req.query.region) {
+      // Superadmin optionally narrowing by region for oversight browsing.
+      const regionalServiceIds = await Service.find({ region: req.query.region }).distinct("_id");
+      filter.service = { $in: regionalServiceIds };
+    }
+
     const appointments = await Appointment.find(filter)
       .populate("service")
       .populate("user", "fullName email phone")
@@ -102,7 +127,8 @@ router.get("/", protect, adminOnly, async (req, res) => {
   }
 });
 
-// PATCH /api/appointments/:id/status - admin updates status (confirm/complete/no_show/cancel)
+// PATCH /api/appointments/:id/status - admin updates status.
+// Regional admins can only update appointments within their own region.
 router.patch("/:id/status", protect, adminOnly, async (req, res) => {
   try {
     const { status } = req.body;
@@ -110,13 +136,18 @@ router.patch("/:id/status", protect, adminOnly, async (req, res) => {
     if (!valid.includes(status)) {
       return res.status(400).json({ message: "Invalid status value" });
     }
-    const appointment = await Appointment.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    ).populate("service").populate("user", "fullName email phone");
+
+    const appointment = await Appointment.findById(req.params.id).populate("service");
     if (!appointment) return res.status(404).json({ message: "Appointment not found" });
-    res.json({ appointment });
+
+    if (req.user.role === "admin" && appointment.service?.region !== req.user.region) {
+      return res.status(403).json({ message: "This appointment is outside your assigned region" });
+    }
+
+    appointment.status = status;
+    await appointment.save();
+    const populated = await appointment.populate("user", "fullName email phone");
+    res.json({ appointment: populated });
   } catch (err) {
     res.status(500).json({ message: "Could not update appointment", error: err.message });
   }

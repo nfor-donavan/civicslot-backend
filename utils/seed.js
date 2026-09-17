@@ -114,19 +114,44 @@ async function seed() {
   await mongoose.connect(process.env.MONGO_URI);
   console.log("Connected. Seeding...");
 
-  const adminEmail = "admin@civicslot.cm";
-  let admin = await User.findOne({ email: adminEmail });
-  if (!admin) {
-    admin = await User.create({
+  // The original seeded account is now the SUPERADMIN — sees and manages
+  // everything, across every region.
+  const superadminEmail = "admin@civicslot.cm";
+  let superadmin = await User.findOne({ email: superadminEmail });
+  if (!superadmin) {
+    superadmin = await User.create({
       fullName: "CivicSlot Admin",
-      email: adminEmail,
+      email: superadminEmail,
       phone: "+237600000000",
       password: "Admin123!",
-      role: "admin",
+      role: "superadmin",
     });
-    console.log(`Admin created -> email: ${adminEmail}  password: Admin123!`);
+    console.log(`Superadmin created -> email: ${superadminEmail}  password: Admin123!`);
+  } else if (superadmin.role !== "superadmin") {
+    superadmin.role = "superadmin";
+    superadmin.region = undefined;
+    await superadmin.save();
+    console.log(`Upgraded existing account ${superadminEmail} to superadmin.`);
   } else {
-    console.log("Admin already exists, skipping.");
+    console.log("Superadmin already exists, skipping.");
+  }
+
+  // One example regional admin, scoped to Centre, so you have something to
+  // test regional scoping with immediately.
+  const regionalAdminEmail = "centre.admin@civicslot.cm";
+  let regionalAdmin = await User.findOne({ email: regionalAdminEmail });
+  if (!regionalAdmin) {
+    regionalAdmin = await User.create({
+      fullName: "Centre Regional Admin",
+      email: regionalAdminEmail,
+      phone: "+237600000001",
+      password: "Admin123!",
+      role: "admin",
+      region: "Centre",
+    });
+    console.log(`Regional admin created -> email: ${regionalAdminEmail}  password: Admin123!  region: Centre`);
+  } else {
+    console.log("Example regional admin already exists, skipping.");
   }
 
   for (const s of services) {

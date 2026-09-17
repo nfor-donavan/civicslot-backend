@@ -1,10 +1,11 @@
 const express = require("express");
 const Candidate = require("../models/Candidate");
-const { protect, adminOnly } = require("../middleware/auth");
+const { protect, superadminOnly } = require("../middleware/auth");
 
 const router = express.Router();
 
 // GET /api/candidates?position=president|senator&region=Centre
+// Public and read-only for everyone (citizens and admins alike).
 router.get("/", async (req, res) => {
   try {
     const { position, region, all } = req.query;
@@ -18,8 +19,11 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/candidates - admin only
-router.post("/", protect, adminOnly, async (req, res) => {
+// Candidate profiles are national civic-info content, not tied to any one
+// office — so only the superadmin manages them, not regional admins.
+
+// POST /api/candidates - superadmin only
+router.post("/", protect, superadminOnly, async (req, res) => {
   try {
     const candidate = await Candidate.create(req.body);
     res.status(201).json({ candidate });
@@ -28,8 +32,8 @@ router.post("/", protect, adminOnly, async (req, res) => {
   }
 });
 
-// PUT /api/candidates/:id - admin only
-router.put("/:id", protect, adminOnly, async (req, res) => {
+// PUT /api/candidates/:id - superadmin only
+router.put("/:id", protect, superadminOnly, async (req, res) => {
   try {
     const candidate = await Candidate.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -42,8 +46,8 @@ router.put("/:id", protect, adminOnly, async (req, res) => {
   }
 });
 
-// DELETE /api/candidates/:id - admin only
-router.delete("/:id", protect, adminOnly, async (req, res) => {
+// DELETE /api/candidates/:id - superadmin only
+router.delete("/:id", protect, superadminOnly, async (req, res) => {
   try {
     const candidate = await Candidate.findByIdAndDelete(req.params.id);
     if (!candidate) return res.status(404).json({ message: "Candidate not found" });

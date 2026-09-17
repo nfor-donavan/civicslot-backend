@@ -13,6 +13,15 @@ function minutesToTime(mins) {
   return `${h}:${m}`;
 }
 
+// YYYY-MM-DD for "today" in server local time.
+function getTodayString() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 // Generates the raw slot grid for a service (does not check bookings)
 function generateSlotGrid(service) {
   const slots = [];
@@ -24,7 +33,9 @@ function generateSlotGrid(service) {
   return slots;
 }
 
-// Returns slots with remaining capacity for a given date, excluding cancelled bookings
+// Returns slots with remaining capacity for a given date, excluding cancelled
+// bookings, and marks any slot earlier than the current time on today's date
+// as "past" so it can no longer be booked.
 async function getAvailableSlots(service, date) {
   const grid = generateSlotGrid(service);
   const bookings = await Appointment.aggregate([
@@ -42,16 +53,26 @@ async function getAvailableSlots(service, date) {
     bookedMap[b._id] = b.count;
   });
 
+  const isToday = date === getTodayString();
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
   return grid.map((time) => {
     const booked = bookedMap[time] || 0;
+    const full = booked >= service.capacityPerSlot;
+    const past = isToday && timeToMinutes(time) < nowMinutes;
     return {
       time,
       capacity: service.capacityPerSlot,
       booked,
       remaining: Math.max(service.capacityPerSlot - booked, 0),
-      full: booked >= service.capacityPerSlot,
+      full,
+      past,
+      // Convenience flag: true if the slot cannot be booked for ANY reason
+      // (already full, or the time has already passed today).
+      unavailable: full || past,
     };
   });
 }
 
-module.exports = { generateSlotGrid, getAvailableSlots, timeToMinutes };
+module.exports = { generateSlotGrid, getAvailableSlots, timeToMinutes, getTodayString };
