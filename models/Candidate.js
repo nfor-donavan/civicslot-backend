@@ -1,33 +1,17 @@
 const mongoose = require("mongoose");
+const { REGIONS } = require("../utils/regions");
 
-const REGIONS = [
-  "Adamaoua",
-  "Centre",
-  "Est",
-  "Extreme-Nord",
-  "Littoral",
-  "Nord",
-  "Nord-Ouest",
-  "Ouest",
-  "Sud",
-  "Sud-Ouest",
-];
-
-// NOTE: This model is intentionally informational-only. It has no vote count,
-// no "score", and no ballot/registration fields. It exists to let citizens
-// read public biographical information about people running for office —
-// nothing here casts, counts, or represents a vote of any kind.
+// Informational only: no vote counts, scores, ballots or registration fields.
 const candidateSchema = new mongoose.Schema(
   {
-    fullName: { type: String, required: true, trim: true },
+    fullName: { type: String, required: true, trim: true, maxlength: 120 },
     position: { type: String, enum: ["president", "senator"], required: true },
-    // Region is required for senators (they represent a region) and left
-    // null for presidential candidates (a national race).
+    // Required for senators; null for presidential candidates (national race).
     region: { type: String, enum: REGIONS, default: null },
-    party: { type: String, trim: true, default: "" },
-    bio: { type: String, trim: true, default: "" },
-    photoUrl: { type: String, trim: true, default: "" },
-    sourceUrl: { type: String, trim: true, default: "" }, // link to an official/public source for the bio
+    party: { type: String, trim: true, default: "", maxlength: 120 },
+    bio: { type: String, trim: true, default: "", maxlength: 4000 },
+    photoUrl: { type: String, trim: true, default: "", maxlength: 500 },
+    sourceUrl: { type: String, trim: true, default: "", maxlength: 500 },
     active: { type: Boolean, default: true },
   },
   { timestamps: true }

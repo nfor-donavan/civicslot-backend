@@ -1,41 +1,41 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-
-const REGIONS = [
-  "Adamaoua",
-  "Centre",
-  "Est",
-  "Extreme-Nord",
-  "Littoral",
-  "Nord",
-  "Nord-Ouest",
-  "Ouest",
-  "Sud",
-  "Sud-Ouest",
-];
+const { REGIONS } = require("../utils/regions");
 
 const userSchema = new mongoose.Schema(
   {
-    fullName: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String, trim: true },
+    fullName: { type: String, required: true, trim: true, maxlength: 100 },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
+    phone: { type: String, trim: true, maxlength: 30 },
     password: { type: String, required: true, minlength: 6, select: false },
-    // citizen: ordinary user. admin: scoped to one region's offices only.
-    // superadmin: sees/manages everything, and is the only role that can
-    // create new admin accounts or manage candidate profiles.
+    // citizen: ordinary user (mobile app).
+    // admin: regional administrator, restricted to ONE region (region required).
+    // superadmin: platform-wide oversight; not limited to a region.
     role: { type: String, enum: ["citizen", "admin", "superadmin"], default: "citizen" },
-    idNumber: { type: String, trim: true }, // national ID / CNI number, optional
-    region: {
-      // For citizens: the region they live in (optional, just for filtering).
-      // For admins: the region they are allowed to manage (REQUIRED).
-      // For superadmins: not used — they aren't limited to one region.
-      type: String,
-      enum: REGIONS,
-      default: null,
-    },
+    idNumber: { type: String, trim: true, maxlength: 50 },
+    // Citizens: home region (optional, used for filtering).
+    // Admins: the region they are allowed to manage (required).
+    region: { type: String, enum: REGIONS, default: null },
+    // false = suspended: cannot log in and existing tokens stop working.
+    active: { type: Boolean, default: true },
+    // Brute-force protection (enforced for admin roles).
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockUntil: { type: Date, default: null },
+    lastLoginAt: { type: Date, default: null },
+    passwordChangedAt: { type: Date, default: null }, // informational
+    // Embedded in every JWT. Incremented on password change/reset and on
+    // suspension, which instantly invalidates all earlier tokens.
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+
+userSchema.pre("validate", function (next) {
+  if (this.role === "admin" && !this.region) {
+    this.invalidate("region", "A regional administrator must be assigned a region");
+  }
+  next();
+});
 
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
@@ -46,6 +46,10 @@ userSchema.pre("save", async function (next) {
 
 userSchema.methods.comparePassword = function (candidate) {
   return bcrypt.compare(candidate, this.password);
+};
+
+userSchema.methods.isLocked = function () {
+  return Boolean(this.lockUntil && this.lockUntil.getTime() > Date.now());
 };
 
 module.exports = mongoose.model("User", userSchema);

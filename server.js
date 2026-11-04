@@ -1,47 +1,25 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
 const mongoose = require("mongoose");
+const { getConfig, assertStartupConfig } = require("./config");
+const { createApp } = require("./app");
 
-const authRoutes = require("./routes/authRoutes");
-const serviceRoutes = require("./routes/serviceRoutes");
-const appointmentRoutes = require("./routes/appointmentRoutes");
-const candidateRoutes = require("./routes/candidateRoutes");
+async function main() {
+  const cfg = getConfig();
+  assertStartupConfig(cfg).forEach((w) => console.warn(`WARNING: ${w}`));
 
-const app = express();
+  await mongoose.connect(cfg.mongoUri);
+  console.log("MongoDB connected");
 
-app.use(cors());
-app.use(express.json());
+  const server = createApp().listen(cfg.port, () => console.log(`CivicSlot API running on port ${cfg.port}`));
 
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", service: "CivicSlot API" });
+  const shutdown = (signal) => {
+    console.log(`${signal} received, shutting down`);
+    server.close(() => mongoose.disconnect().finally(() => process.exit(0)));
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+}
+
+main().catch((err) => {
+  console.error("Startup failed:", err.message);
+  process.exit(1);
 });
-
-app.use("/api/auth", authRoutes);
-app.use("/api/services", serviceRoutes);
-app.use("/api/appointments", appointmentRoutes);
-app.use("/api/candidates", candidateRoutes);
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
-});
-
-// Central error handler
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ message: "Server error", error: err.message });
-});
-
-const PORT = process.env.PORT || 5000;
-
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("MongoDB connected");
-    app.listen(PORT, () => console.log(`CivicSlot API running on port ${PORT}`));
-  })
-  .catch((err) => {
-    console.error("MongoDB connection failed:", err.message);
-    process.exit(1);
-  });
